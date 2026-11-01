@@ -96,17 +96,33 @@ function StatContents({
   return (
     <>
       <div className="stat-grid">
-        <div>
+        <div className="stat-card">
           <span>任务总数</span>
           <strong>{total}</strong>
         </div>
-        <div>
+        <button
+          type="button"
+          className="stat-card stat-card--inbox inbox-link"
+          onClick={onInbox}
+        >
+          <span className="stat-card-label">
+            待分类任务
+            {inbox > 0 && <i className="inbox-alert-dot" aria-hidden="true" />}
+          </span>
+          <strong>{inbox}</strong>
+          <span className="stat-card-arrow" aria-hidden="true">›</span>
+        </button>
+        <div className="stat-card">
           <span>已完成</span>
           <strong>{completed}</strong>
         </div>
-        <div>
+        <div className="stat-card">
           <span>未完成</span>
           <strong>{incomplete}</strong>
+        </div>
+        <div className="stat-card stat-card--overdue overdue-summary">
+          <span>当前逾期</span>
+          <strong>{overdue}</strong>
         </div>
       </div>
       <div className="completion-block">
@@ -123,17 +139,6 @@ function StatContents({
         </div>
         <button type="button" className="text-link" onClick={onRecords}>
           查看已完成记录 <span aria-hidden="true">↗</span>
-        </button>
-      </div>
-      <div className="stat-bottom">
-        <div className="overdue-summary">
-          <span className="overdue-dot" /> 当前逾期 <strong>{overdue}</strong>{" "}
-          项
-        </div>
-        <button type="button" className="inbox-link" onClick={onInbox}>
-          <span>待分类任务</span>
-          <strong>{inbox}</strong>
-          <span aria-hidden="true">›</span>
         </button>
       </div>
     </>
