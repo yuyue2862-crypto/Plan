@@ -242,16 +242,8 @@ export function saveCandidates(
   );
   if (unresolved.length)
     return { items, success: 0, failed: 0, blocked: "请先处理疑似重复任务" };
-  const unconfirmed = items.filter((item) =>
-    item.selected && item.duplicateChoice !== "skip" && item.dateSource && !item.dateConfirmed,
-  );
-  if (unconfirmed.length)
-    return {
-      items,
-      success: 0,
-      failed: 0,
-      blocked: "请先确认识别出的截止日期，或清除日期",
-    };
+  // 未确认的自动识别日期不阻止保存。
+  // 保存时忽略未经确认的日期。
   if (items.some((item) => item.selected && item.urgencyLocked && item.urgency !== "urgent" && item.urgency !== "not_urgent"))
     return { items, success: 0, failed: 0, blocked: "人工锁定紧急性时，请选择紧急或不紧急" };
   if (items.some((item) => item.selected && !item.title.trim()))
@@ -268,7 +260,7 @@ export function saveCandidates(
       remaining.push({ ...item, selected: false });
       continue;
     }
-    const dueDate = item.dueDate ?? null;
+    const dueDate = item.dateSource && !item.dateConfirmed ? null : (item.dueDate ?? null);
     const important = importanceFromAnswers(item.importanceAnswers);
     const urgent = item.urgency === "urgent" ? true : item.urgency === "not_urgent" ? false : null;
     const fields = {

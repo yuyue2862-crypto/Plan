@@ -55,7 +55,14 @@ describe("text entry", () => {
     });
     const items = makeCandidates("明天提交材料", () => "draft-1", new Date("2026-11-01T12:00:00"));
     expect(items[0]).toMatchObject({ title: "明天提交材料", dueDate: "2026-11-02", dateConfirmed: false });
-    expect(saveCandidates(items, [], repo.add).blocked).toContain("确认");
+    const undatedRepo = createTaskRepository(storage(), {
+      newId: () => "undated-real",
+    });
+    expect(saveCandidates(items, [], undatedRepo.add).success).toBe(1);
+    expect(undatedRepo.findById("undated-real")).toMatchObject({
+      ok: true,
+      value: { dueDate: null, dueTime: null, quadrant: "inbox" },
+    });
     const confirmed = [{ ...items[0], dateConfirmed: true, importanceAnswers: { duty: "yes" as const, consequence: null } }];
     expect(saveCandidates(confirmed, [], repo.add, { now: new Date("2026-11-01T12:00:00"), thresholdDays: 3 }).success).toBe(1);
     expect(repo.findById("dated-real")).toMatchObject({ ok: true, value: { dueDate: "2026-11-02", dueTime: null, important: true, quadrant: "q1" } });

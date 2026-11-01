@@ -301,7 +301,7 @@ export function TextEntryDialog({
                   </div>
                 </div>
                 <p className="candidate-hint">
-                  可确认识别出的日期，并回答重要性问题。尚未确定的任务仍可保存到待分类。
+                  仅任务名称必填。未确认的识别日期会被忽略，其他分类信息可以稍后补充。
                 </p>
                 <div className="bulk-urgency">
                   <span>批量重要性</span>
