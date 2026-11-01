@@ -240,7 +240,7 @@ function App() {
     const read = repository.read(),
       mode = repository.hasEnteredRealMode();
     return {
-      mode: mode.ok ? mode.value : false,
+      mode: mode.ok ? (mode.value || import.meta.env.PROD) : false,
       tasks: read.ok ? read.value : [],
       error: !read.ok ? read.message : !mode.ok ? mode.message : "",
     };
@@ -412,7 +412,7 @@ function App() {
           <div className="header-mascot">
             <img
               className="mascot-art"
-              src="/mascot.png"
+              src={`${import.meta.env.BASE_URL}mascot.png`}
               alt="拿着日历的任务吉祥物"
             />
             <span>今天也一起整理好！</span>
