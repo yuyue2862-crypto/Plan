@@ -76,6 +76,8 @@ npm run build
 - `src/App.tsx`：页面组件及本次页面内的交互状态。
 - `src/styles.css`：桌面和手机布局样式。
 
+四象限可通过工具条“调整布局”交换位置。桌面可拖动标题栏手柄，或依次点选两个手柄；手机依次点选两张卡片。顺序独立保存在 `four-quadrant:layout:v1`，恢复默认布局只修改该偏好，不影响任务分类与任务数据。
+
 ## 正式任务数据接口（第 2-1 步）
 
 正式任务保存在当前浏览器当前站点的 `localStorage`，键为 `four-quadrant:tasks:v1`，数据格式带 `version: 1`。`src/data/taskRepository.ts` 的 `browserTaskRepository()` 提供 `read`、`add`、`update`、`updateStatus`、`remove` 和 `findById`。这些方法返回 `{ ok: true, value }` 或 `{ ok: false, code, message }`，调用方应处理失败结果。
@@ -103,5 +105,6 @@ npm run build
 - 语音：打开“新建任务 → 语音录入”，按住按钮说普通话，松开识别；上滑 80px 后松开可取消，单段最多 60 秒。各段识别文字可编辑、删除并合并生成候选任务。若录制到音频，可在当前弹窗回听；浏览器原生语音识别**不能重新转写已保存的录音**。不支持语音识别时会提示改用文字录入。
 - 麦克风：使用浏览器的 `SpeechRecognition`／`webkitSpeechRecognition`、`getUserMedia` 和 `MediaRecorder`，运行时逐项检查支持情况。浏览器可能使用自己的在线识别服务；本项目不上传音频到自建服务。麦克风需要安全上下文和浏览器授权。Mac 的 `localhost` 属于安全上下文；手机通过局域网 `http://IP:端口` 访问时，浏览器可能阻止麦克风，请改用 HTTPS 环境或文字录入。
 - OCR：可拍照、从相册选图或电脑上传，每次最多 5 张。每张图可选择裁剪并独立调整左、上、宽、高比例；逐张识别，失败可单独重试，成功文字保持可编辑。原图默认折叠。识别文字沿用同一个任务拆分、日期确认、分类和保存流程。
-- OCR 技术：Tesseract.js 7，简体中文 `chi_sim` 与英文 `eng`。`public/ocr/` 存放本地 worker、WASM 核心和压缩语言模型（合计约 50 MB）；首次加载需要一些时间，语言模型由 Tesseract.js 在浏览器 IndexedDB 中缓存。无需付费接口或 API 密钥。语言模型来自 [Project Naptha tessdata](https://tessdata.projectnaptha.com/4.0.0/)，运行核心来自 `tesseract.js-core`，对应许可文本在 `public/ocr/core-LICENSE.txt`。
+- OCR 技术：Tesseract.js 7，默认加载简体中文 `chi_sim` 模型。`public/ocr/` 存放本地 worker、WASM 核心和压缩语言模型；首次加载需要一些时间，语言模型由 Tesseract.js 在浏览器 IndexedDB 中缓存。无需付费接口或 API 密钥。语言模型来自 [Project Naptha tessdata](https://tessdata.projectnaptha.com/4.0.0/)，运行核心来自 `tesseract.js-core`，对应许可文本在 `public/ocr/core-LICENSE.txt`。
+- OCR 运行资源按 Vite 的 `BASE_URL` 从同源 `/ocr/` 或 GitHub Pages `/Plan/ocr/` 读取，启动前检查资源状态和内容类型。默认只加载 `chi_sim` 模型，它也能处理常见英文和数字；识别前将照片最长边限制在 2400 像素，原图保持在弹窗内供核对。
 - 存储：正式任务只保存确认后的文字与分类字段；语音和 OCR 的未保存文字写入独立草稿。音频 Blob 和原图只在当前弹窗内存中保留，关闭后释放，刷新后不能回听或恢复原图。原图不写入任务数据库或 `localStorage`。

@@ -26,6 +26,7 @@ export function OcrEntry({ texts, onTextsChange, onGenerate, onPendingChange, cl
 }) {
   const [images, setImages] = useState<OcrImage[]>([]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [message, setMessage] = useState("");
   const imagesRef = useRef(images);
   imagesRef.current = images;
@@ -94,7 +95,7 @@ export function OcrEntry({ texts, onTextsChange, onGenerate, onPendingChange, cl
     try {
       const worker = await ensureWorker();
       updateImage(image.id, { status: "recognizing", step: "识别文字", progress: 0 });
-      const input = image.cropEnabled ? await cropImage(image.file, image.crop) : image.file;
+      const input = await cropImage(image.file, image.cropEnabled ? image.crop : FULL_CROP);
       const result = await worker.recognize(input);
       const recognized = normalizeOcrText(result.data.text);
       if (!recognized) throw new Error("没有识别到文字");
@@ -106,17 +107,20 @@ export function OcrEntry({ texts, onTextsChange, onGenerate, onPendingChange, cl
           : [...current, { id: image.id, text: recognized, imported: false }];
       });
     } catch (error) {
+      if (import.meta.env.DEV) console.error("OCR recognition failed", error);
       updateImage(image.id, { status: "error", step: "识别失败", error: ocrErrorMessage(error) });
     } finally {
       activeIdRef.current = null;
     }
   }
   async function processImages(targets: OcrImage[]) {
-    if (busy || !targets.length) return;
+    if (busyRef.current || !targets.length) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       for (const image of targets) await processOne(image);
     } finally {
+      busyRef.current = false;
       if (mountedRef.current) setBusy(false);
     }
   }

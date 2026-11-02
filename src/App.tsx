@@ -5,6 +5,7 @@ import { toViewTask } from "./data/taskView";
 import { TextEntryDialog } from "./TextEntryDialog";
 import { TaskClassificationDialog } from "./TaskClassificationDialog";
 import { browserSettingsStore } from "./data/settings";
+import { readLayout, saveLayout, swapLayout, type LayoutOrder } from "./data/layoutPreference";
 import { classifyTask, DEFAULT_URGENCY_DAYS } from "./domain/classification";
 import { PixelArt } from "./PixelArt";
 import {
@@ -153,6 +154,14 @@ function Quadrant({
   onDetail,
   expanded,
   onExpand,
+  editingLayout,
+  selectedLayout,
+  dropTarget,
+  onLayoutSelect,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }: {
   id: QuadrantId;
   tasks: Task[];
@@ -161,15 +170,29 @@ function Quadrant({
   onDetail: (id: string) => void;
   expanded: boolean;
   onExpand: (id: QuadrantId) => void;
+  editingLayout: boolean;
+  selectedLayout: boolean;
+  dropTarget: boolean;
+  onLayoutSelect: (id: QuadrantId) => void;
+  onDragStart: (id: QuadrantId, event: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDragOver: (id: QuadrantId, event: React.DragEvent) => void;
+  onDrop: (id: QuadrantId, event: React.DragEvent) => void;
 }) {
   const meta = quadrantMeta[id];
   return (
     <section
-      className={`quadrant quadrant--${id}`}
+      className={`quadrant quadrant--${id} ${dropTarget ? "layout-drop-target" : ""} ${selectedLayout ? "layout-selected" : ""}`}
       aria-label={`第${meta.number}象限 ${meta.title}`}
+      onDragOver={(event) => editingLayout && onDragOver(id, event)}
+      onDrop={(event) => editingLayout && onDrop(id, event)}
     >
       <div className="quadrant-desktop">
         <header className="quadrant-header">
+          {editingLayout && <button type="button" className="layout-handle" draggable
+            onDragStart={(event) => onDragStart(id, event)} onClick={() => onLayoutSelect(id)}
+            onDragEnd={onDragEnd}
+            aria-label={`选择或拖动第${meta.number}象限交换位置`} title="拖动交换；也可点选两个象限">⠿</button>}
           <span className="quadrant-number">{meta.number}</span>
           <div className="quadrant-heading">
             <h2>{meta.title}</h2>
@@ -202,12 +225,13 @@ function Quadrant({
       </div>
       <button
         type="button"
-        className={`quadrant-mobile ${expanded ? "is-selected" : ""}`}
-        onClick={() => onExpand(id)}
+        className={`quadrant-mobile ${expanded && !editingLayout ? "is-selected" : ""} ${selectedLayout ? "layout-selected" : ""}`}
+        onClick={() => editingLayout ? onLayoutSelect(id) : onExpand(id)}
         aria-expanded={expanded}
         aria-controls="mobile-task-list"
       >
         <div className="mobile-card-top">
+          {editingLayout && <span className="mobile-layout-handle" aria-hidden="true">点选交换</span>}
           <span className="quadrant-number">{meta.number}</span>
           <PixelArt kind={id} className="mobile-quadrant-art" />
           <span className="mobile-card-count">{tasks.length} 项</span>
@@ -230,6 +254,21 @@ function Quadrant({
 function App() {
   const [repository] = useState(browserTaskRepository);
   const [settingsStore] = useState(browserSettingsStore);
+  const [layout, setLayout] = useState<LayoutOrder>(() => readLayout(window.localStorage));
+  const [layoutEditing, setLayoutEditing] = useState(false);
+  const [layoutSelected, setLayoutSelected] = useState<QuadrantId | null>(null);
+  const [layoutDragged, setLayoutDragged] = useState<QuadrantId | null>(null);
+  const [layoutTarget, setLayoutTarget] = useState<QuadrantId | null>(null);
+  const [layoutMessage, setLayoutMessage] = useState("");
+  const changeLayout = (order: LayoutOrder) => {
+    setLayout(order);
+    setLayoutMessage(saveLayout(window.localStorage, order) ? "" : "当前浏览器无法保存布局偏好；刷新后可能恢复默认。 ");
+  };
+  const selectLayout = (id: QuadrantId) => {
+    if (!layoutSelected) { setLayoutSelected(id); return; }
+    if (layoutSelected !== id) changeLayout(swapLayout(layout, layoutSelected, id));
+    setLayoutSelected(null);
+  };
   const [thresholdDays, setThresholdDays] = useState(() => {
     const read = settingsStore.read();
     return read.ok ? read.value : DEFAULT_URGENCY_DAYS;
@@ -466,7 +505,9 @@ function App() {
             工作任务共 <strong>{visible.length}</strong> 项
           </span>
           <button type="button" className="settings-button" onClick={() => { setSettingsDraft(thresholdDays); setSettingsMessage(""); setOverlay("settings"); }}>紧急性设置</button>
+          <button type="button" className="settings-button layout-mode-button" onClick={() => { setLayoutEditing(!layoutEditing); setLayoutSelected(null); setLayoutTarget(null); }}>{layoutEditing ? "完成调整" : "调整布局"}</button>
         </div>
+        {layoutEditing && <div className="layout-toolbar"><span>拖动标题栏手柄，或点选两个象限交换位置；手机上点选两张卡片。</span><button type="button" onClick={() => { changeLayout([...quadrantOrder] as LayoutOrder); setLayoutSelected(null); }}>恢复默认布局</button>{layoutMessage && <span role="alert">{layoutMessage}</span>}</div>}
         {filter === "custom" && (
           <div className="date-range">
             <label>
@@ -493,7 +534,7 @@ function App() {
           </div>
         )}
         <div className="quadrant-grid">
-          {quadrantOrder.map((id) => (
+          {layout.map((id) => (
             <Quadrant
               key={id}
               id={id}
@@ -503,6 +544,14 @@ function App() {
               onDetail={openDetail}
               expanded={expanded === id}
               onExpand={setExpanded}
+              editingLayout={layoutEditing}
+              selectedLayout={layoutSelected === id}
+              dropTarget={layoutTarget === id && layoutDragged !== id}
+              onLayoutSelect={selectLayout}
+              onDragStart={(source, event) => { setLayoutDragged(source); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", source); }}
+              onDragEnd={() => { setLayoutDragged(null); setLayoutTarget(null); }}
+              onDragOver={(target, event) => { if (layoutDragged && layoutDragged !== target) { event.preventDefault(); setLayoutTarget(target); } }}
+              onDrop={(target, event) => { event.preventDefault(); const source = event.dataTransfer.getData("text/plain") as QuadrantId; if (layoutDragged === source && source !== target) changeLayout(swapLayout(layout, source, target)); setLayoutDragged(null); setLayoutTarget(null); setLayoutSelected(null); }}
             />
           ))}
         </div>

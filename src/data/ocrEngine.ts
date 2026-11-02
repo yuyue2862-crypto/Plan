@@ -1,5 +1,11 @@
 export interface CropArea { x: number; y: number; width: number; height: number }
 export const FULL_CROP: CropArea = { x: 0, y: 0, width: 100, height: 100 };
+export const MAX_OCR_SIDE = 2400;
+
+export function ocrDimensions(width: number, height: number) {
+  const scale = Math.min(1, MAX_OCR_SIDE / Math.max(width, height));
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
 
 /** Tesseract may insert spaces between adjacent Han characters; preserve line breaks. */
 export function normalizeOcrText(text: string): string {
@@ -35,34 +41,59 @@ export async function cropImage(file: File, area: CropArea): Promise<Blob> {
     const sw = Math.max(1, Math.floor(sourceWidth * crop.width / 100));
     const sh = Math.max(1, Math.floor(sourceHeight * crop.height / 100));
     const canvas = document.createElement("canvas");
-    canvas.width = sw;
-    canvas.height = sh;
+    const dimensions = ocrDimensions(sw, sh);
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("浏览器无法创建图片裁剪画布");
-    context.drawImage(image, sx, sy, Math.min(sw, sourceWidth - sx), Math.min(sh, sourceHeight - sy), 0, 0, sw, sh);
+    context.drawImage(image, sx, sy, Math.min(sw, sourceWidth - sx), Math.min(sh, sourceHeight - sy), 0, 0, dimensions.width, dimensions.height);
     return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) =>
-      blob ? resolve(blob) : reject(new Error("图片裁剪失败")), "image/png"));
+      blob ? resolve(blob) : reject(new Error("图片处理失败")), "image/jpeg", 0.9));
   } finally {
     URL.revokeObjectURL(imageUrl);
   }
 }
 
+export function ocrResourceBase(baseUrl: string, pageUrl: string): string {
+  return new URL(`ocr/`, new URL(baseUrl, pageUrl)).href;
+}
+
+/** Fail early on a missing resource or an HTML fallback page. */
+export async function checkOcrResources(base: string, request: typeof fetch = fetch): Promise<void> {
+  for (const name of ["worker.min.js", "tesseract-core-lstm.wasm.js", "tesseract-core-lstm.wasm", "tesseract-core-simd-lstm.wasm.js", "tesseract-core-simd-lstm.wasm", "tesseract-core-relaxedsimd-lstm.wasm.js", "tesseract-core-relaxedsimd-lstm.wasm", "chi_sim.traineddata.gz"]) {
+    let response: Response;
+    try { response = await request(`${base}${name}`, { method: "HEAD", redirect: "error" }); }
+    catch { throw new Error(`OCR 资源加载异常：${name} 无法访问`); }
+    const type = response.headers.get("content-type") ?? "";
+    if (!response.ok || /text\/html/i.test(type)) throw new Error(`OCR 资源加载异常：${name} 返回 ${response.status} ${type}`);
+  }
+}
+
 export async function createLocalOcrWorker(onProgress: (status: string, progress: number) => void) {
+  if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") throw new Error("浏览器不支持 Web Worker 或 WebAssembly");
   const { createWorker, OEM } = await import("tesseract.js");
-  const base = "/ocr";
-  return createWorker(["chi_sim", "eng"], OEM.LSTM_ONLY, {
-    workerPath: `${base}/worker.min.js`,
+  const base = ocrResourceBase(import.meta.env.BASE_URL, window.location.href);
+  await checkOcrResources(base);
+  return createWorker("chi_sim", OEM.LSTM_ONLY, {
+    workerPath: `${base}worker.min.js`,
     corePath: base,
     langPath: base,
     workerBlobURL: false,
+    errorHandler: (error) => { if (import.meta.env.DEV) console.error("OCR Worker", error); },
     logger: ({ status, progress }) => onProgress(status, progress),
   });
 }
 
 export function ocrErrorMessage(error: unknown): string {
-  const reason = (error instanceof Error ? error.message : String(error))
-    .replace(/^(Error:\s*)+/i, "").replace(/[.。]+$/, "");
-  if (/traineddata|fetch|load|network|wasm|worker/i.test(reason))
-    return `OCR 中文模型或运行资源加载失败：${reason}。请确认页面资源可访问后单独重试。`;
-  return `图片识别失败：${reason}。请调整裁剪区域或换一张清晰图片后重试。`;
+  const value = typeof ErrorEvent !== "undefined" && error instanceof ErrorEvent ? error.message : error instanceof Error ? error.message
+    : typeof error === "string" ? error : error && typeof error === "object" && "message" in error ? String(error.message ?? "") : "";
+  const reason = value.replace(/^(Error:\s*)+/i, "").trim();
+  if (/资源加载异常|traineddata|fetch|network|404|wasm|worker|failed to load|importscripts|cors/i.test(reason))
+    return "OCR 运行资源加载异常，请检查网络并重试。";
+  if (/无法打开图片|图片尺寸|图片处理|画布|decode|image format|unsupported image/i.test(reason))
+    return "图片格式或解码异常，请换一张 JPG、PNG 或 WebP 图片重试。";
+  if (/不支持|not supported/i.test(reason)) return "当前浏览器不支持本地图片识别所需的 Worker 或 WebAssembly。";
+  if (/memory|allocation|out of bounds/i.test(reason)) return "识别时内存不足，请关闭其他页面或裁剪图片后重试。";
+  if (/没有识别到文字/.test(reason)) return "没有识别到文字，请调整裁剪区域后重试。";
+  return "识别引擎运行失败，请重试或检查浏览器兼容性。";
 }
